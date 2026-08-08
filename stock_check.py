@@ -7,10 +7,6 @@ import requests
 from bs4 import BeautifulSoup
 
 
-# ============================================================
-# CONFIG
-# ============================================================
-
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
@@ -35,12 +31,7 @@ logging.basicConfig(
 log = logging.getLogger("stock-checker")
 
 
-# ============================================================
-# CHECK PRODUCT STOCK
-# ============================================================
-
 def check_stock():
-
     try:
         response = requests.get(
             PRODUCT_URL,
@@ -51,7 +42,6 @@ def check_stock():
         response.raise_for_status()
 
     except requests.RequestException as error:
-
         log.error(f"Could not fetch product page: {error}")
         return None
 
@@ -60,14 +50,13 @@ def check_stock():
         "html.parser"
     )
 
-    # WooCommerce stock status
+    # WooCommerce stock element
     stock_tag = soup.find(
         "p",
         class_="stock"
     )
 
     if stock_tag:
-
         text = stock_tag.get_text(
             " ",
             strip=True
@@ -85,7 +74,6 @@ def check_stock():
     )
 
     if add_to_cart:
-
         classes = add_to_cart.get(
             "class",
             []
@@ -94,7 +82,7 @@ def check_stock():
         if "disabled" not in classes:
             return True
 
-    # Page text fallback
+    # Fallback
     page_text = soup.get_text(
         " ",
         strip=True
@@ -110,17 +98,12 @@ def check_stock():
     return None
 
 
-# ============================================================
-# STATE
-# ============================================================
-
 def load_previous_status():
 
     if not STATE_FILE.exists():
         return None
 
     try:
-
         data = json.loads(
             STATE_FILE.read_text()
         )
@@ -128,37 +111,26 @@ def load_previous_status():
         return data.get("in_stock")
 
     except Exception:
-
         return None
 
 
 def save_status(status):
 
     STATE_FILE.write_text(
-        json.dumps(
-            {
-                "in_stock": status
-            }
-        )
+        json.dumps({
+            "in_stock": status
+        })
     )
 
-
-# ============================================================
-# TELEGRAM
-# ============================================================
 
 def send_telegram_message(message):
 
     if not TELEGRAM_BOT_TOKEN:
-        log.error(
-            "TELEGRAM_BOT_TOKEN is missing."
-        )
+        log.error("TELEGRAM_BOT_TOKEN is missing.")
         return
 
     if not TELEGRAM_CHAT_ID:
-        log.error(
-            "TELEGRAM_CHAT_ID is missing."
-        )
+        log.error("TELEGRAM_CHAT_ID is missing.")
         return
 
     url = (
@@ -179,9 +151,7 @@ def send_telegram_message(message):
 
         response.raise_for_status()
 
-        log.info(
-            "Telegram notification sent."
-        )
+        log.info("Telegram notification sent.")
 
     except requests.RequestException as error:
 
@@ -189,10 +159,6 @@ def send_telegram_message(message):
             f"Telegram error: {error}"
         )
 
-
-# ============================================================
-# MAIN
-# ============================================================
 
 def main():
 
@@ -217,8 +183,8 @@ def main():
         f"Current status: {status}"
     )
 
-    # Only notify when status changes
-    # from OUT OF STOCK -> IN STOCK
+    # Notify only when product changes
+    # from OUT OF STOCK to IN STOCK.
 
     if current is True and previous is False:
 
@@ -226,17 +192,6 @@ def main():
             "🚨 PRODUCT BACK IN STOCK!\n\n"
             f"🧴 {PRODUCT_NAME}\n\n"
             "✅ Available now!\n\n"
-            f"🛒 {PRODUCT_URL}"
-        )
-
-        send_telegram_message(message)
-
-    # First run
-    elif current is True and previous is None:
-
-        message = (
-            "🟢 PRODUCT IS CURRENTLY IN STOCK!\n\n"
-            f"🧴 {PRODUCT_NAME}\n\n"
             f"🛒 {PRODUCT_URL}"
         )
 
