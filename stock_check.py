@@ -4,13 +4,18 @@ import logging
 from pathlib import Path
 
 import requests
-from bs4 import BeautifulSoup
-
 
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
+# Real product URL
 PRODUCT_URL = "https://kojiesan.in/product/skin-lightening-soap-135g/"
+
+# Jina Reader fetches the page for us
+CHECK_URL = (
+    "https://r.jina.ai/https://kojiesan.in/product/skin-lightening-soap-135g/"
+)
+
 PRODUCT_NAME = "Kojie San Skin Lightening Soap 135g"
 
 STATE_FILE = Path("stock_state.json")
@@ -32,11 +37,13 @@ log = logging.getLogger("stock-checker")
 
 
 def check_stock():
+    log.info(f"Checking: {PRODUCT_NAME}")
+
     try:
         response = requests.get(
-            PRODUCT_URL,
+            CHECK_URL,
             headers=HEADERS,
-            timeout=20
+            timeout=30
         )
 
         response.raise_for_status()
@@ -45,56 +52,37 @@ def check_stock():
         log.error(f"Could not fetch product page: {error}")
         return None
 
-    soup = BeautifulSoup(
-        response.text,
-        "html.parser"
+    page_text = response.text.lower()
+
+    # Find the main product section.
+    product_position = page_text.find(
+        "kojie san skin lightening soap 135g"
     )
 
-    # WooCommerce stock element
-    stock_tag = soup.find(
-        "p",
-        class_="stock"
-    )
+    if product_position == -1:
+        log.warning("Product name was not found in fetched page.")
+        return None
 
-    if stock_tag:
-        text = stock_tag.get_text(
-            " ",
-            strip=True
-        ).lower()
+    # Only inspect the section immediately after the product name.
+    product_section = page_text[
+        product_position:product_position + 1500
+    ]
 
-        if "out of stock" in text:
-            return False
-
-        if "in stock" in text:
-            return True
-
-    # Add to cart button
-    add_to_cart = soup.find(
-        class_="single_add_to_cart_button"
-    )
-
-    if add_to_cart:
-        classes = add_to_cart.get(
-            "class",
-            []
-        )
-
-        if "disabled" not in classes:
-            return True
-
-    # Fallback
-    page_text = soup.get_text(
-        " ",
-        strip=True
-    ).lower()
-
-    if "out of stock" in page_text:
+    # Out of stock has priority.
+    if "out of stock" in product_section:
         return False
 
-    log.warning(
-        "Could not determine product stock."
-    )
+    if "sold out" in product_section:
+        return False
 
+    # In stock indicators.
+    if "in stock" in product_section:
+        return True
+
+    if "add to cart" in product_section:
+        return True
+
+    log.warning("Could not determine product stock.")
     return None
 
 
@@ -162,10 +150,6 @@ def send_telegram_message(message):
 
 def main():
 
-    log.info(
-        f"Checking: {PRODUCT_NAME}"
-    )
-
     current = check_stock()
 
     if current is None:
@@ -183,9 +167,11 @@ def main():
         f"Current status: {status}"
     )
 
-    # Notify only when product changes
-    # from OUT OF STOCK to IN STOCK.
-
+    # Send notification only when:
+    #
+    # Previous = OUT OF STOCK
+    # Current  = IN STOCK
+    #
     if current is True and previous is False:
 
         message = (
